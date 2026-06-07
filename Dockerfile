@@ -10,8 +10,8 @@ FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-RUN npm ci
-# Generate Prisma Client
+RUN npm install
+# Generate Prisma Client (necesita prisma CLI de devDeps)
 RUN npx prisma generate
 
 # --- Build ---
