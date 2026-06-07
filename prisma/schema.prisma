@@ -1,0 +1,288 @@
+// Espacio Resiliente - Schema de Base de Datos
+// PostgreSQL + Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  PSYCHOLOGIST
+  PATIENT
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum Currency {
+  PEN
+  USD
+}
+
+enum SessionType {
+  DIAGNOSTIC
+  INDIVIDUAL
+  COUPLE
+}
+
+// ============================================
+// USUARIOS
+// ============================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  role          UserRole @default(PATIENT)
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  patient      Patient?
+  psychologist Psychologist?
+
+  @@map("users")
+}
+
+// ============================================
+// PACIENTES
+// ============================================
+
+model Patient {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+  firstName   String   @map("first_name")
+  lastName    String   @map("last_name")
+  phone       String?
+  country     String   @default("PE")
+  timezone    String   @default("America/Lima")
+  isNational  Boolean  @default(true) @map("is_national")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  purchases    Purchase[]
+  intranetAccess IntranetAccess[]
+
+  @@map("patients")
+}
+
+// ============================================
+// PSICOLOGOS
+// ============================================
+
+model Psychologist {
+  id              String   @id @default(cuid())
+  userId          String   @unique @map("user_id")
+  firstName       String   @map("first_name")
+  lastName        String   @map("last_name")
+  slug            String   @unique
+  title           String   // "Psicólogo Clínico", etc.
+  specialty       String   // Especialidad principal
+  areas           String[] // Áreas de atención ["Ansiedad", "Depresión", ...]
+  languages       String[] @default(["Español"])
+  bio             String?  @db.Text
+  quote           String?  // Frase motivacional
+  photoUrl        String?  @map("photo_url")
+  yearsExperience Int      @default(0) @map("years_experience")
+  calendarId      String?  @map("calendar_id") // Google Calendar ID
+  isActive        Boolean  @default(true) @map("is_active")
+  displayOrder    Int      @default(0) @map("display_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  services     Service[]
+
+  @@map("psychologists")
+}
+
+// ============================================
+// SERVICIOS (Tipos de sesión con precios)
+// ============================================
+
+model Service {
+  id             String      @id @default(cuid())
+  psychologistId String?     @map("psychologist_id")
+  name           String      // "Consulta Diagnóstica", "Sesión Individual", etc.
+  sessionType    SessionType @map("session_type")
+  description    String?     @db.Text
+  durationMin    Int         @default(50) @map("duration_min")
+  pricePen       Decimal     @db.Decimal(10, 2) @map("price_pen")
+  priceUsd       Decimal     @db.Decimal(10, 2) @map("price_usd")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  // Relaciones
+  psychologist Psychologist? @relation(fields: [psychologistId], references: [id])
+  appointments Appointment[]
+
+  @@map("services")
+}
+
+// ============================================
+// PAQUETES DE SESIONES
+// ============================================
+
+model Package {
+  id              String   @id @default(cuid())
+  name            String   // "Paquete 4 Sesiones", etc.
+  sessionsTotal   Int      @map("sessions_total")
+  discountPercent Int      @default(0) @map("discount_percent")
+  pricePen        Decimal  @db.Decimal(10, 2) @map("price_pen")
+  priceUsd        Decimal  @db.Decimal(10, 2) @map("price_usd")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  purchases Purchase[]
+
+  @@map("packages")
+}
+
+// ============================================
+// COMPRAS / PAGOS
+// ============================================
+
+model Purchase {
+  id              String        @id @default(cuid())
+  patientId       String        @map("patient_id")
+  packageId       String?       @map("package_id")
+  currency        Currency      @default(PEN)
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentStatus   PaymentStatus @default(PENDING) @map("payment_status")
+  paymentMethod   String?       @map("payment_method") // "card", "yape", etc.
+  culqiChargeId   String?       @map("culqi_charge_id")
+  culqiMetadata   Json?         @map("culqi_metadata")
+  sessionsTotal   Int           @default(1) @map("sessions_total")
+  sessionsUsed    Int           @default(0) @map("sessions_used")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Relaciones
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  package  Package? @relation(fields: [packageId], references: [id])
+
+  @@map("purchases")
+}
+
+// ============================================
+// CITAS / APPOINTMENTS
+// ============================================
+
+model Appointment {
+  id              String            @id @default(cuid())
+  patientId       String            @map("patient_id")
+  psychologistId  String            @map("psychologist_id")
+  serviceId       String            @map("service_id")
+  scheduledAt     DateTime          @map("scheduled_at")
+  durationMin     Int               @default(50) @map("duration_min")
+  status          AppointmentStatus @default(PENDING)
+  meetingUrl      String?           @map("meeting_url")
+  googleEventId   String?           @map("google_event_id")
+  notes           String?           @db.Text
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  // Relaciones
+  patient      Patient      @relation(fields: [patientId], references: [id])
+  psychologist Psychologist @relation(fields: [psychologistId], references: [id])
+  service      Service      @relation(fields: [serviceId], references: [id])
+
+  @@map("appointments")
+}
+
+// ============================================
+// ZONA EXCLUSIVA / INTRANET
+// ============================================
+
+model IntranetAccess {
+  id          String   @id @default(cuid())
+  patientId   String   @map("patient_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  expiresAt   DateTime? @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  patient Patient @relation(fields: [patientId], references: [id])
+
+  @@map("intranet_access")
+}
+
+// ============================================
+// CONTENIDO INTRANET
+// ============================================
+
+model IntranetContent {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  category    String   // "guías", "ejercicios", "material"
+  content     String   @db.Text
+  fileUrl     String?  @map("file_url")
+  isPublished Boolean  @default(false) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("intranet_content")
+}
+
+// ============================================
+// FORMULARIO DE CONTACTO
+// ============================================
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  message   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("contact_messages")
+}
+
+// ============================================
+// TESTIMONIOS
+// ============================================
+
+model Testimonial {
+  id          String   @id @default(cuid())
+  alias       String   // "Paciente A"
+  text        String   @db.Text
+  serviceType String   @map("service_type") // "Terapia Individual", etc.
+  rating      Int?     @default(5)
+  isPublished Boolean  @default(true) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("testimonials")
+}

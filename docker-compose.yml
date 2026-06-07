@@ -1,0 +1,16 @@
+services:
+  backend:
+    build: .
+    container_name: espacioresiliente_api
+    restart: always
+    ports:
+      - "3041:3001"
+    env_file:
+      - .env
+    networks:
+      - default
+      - postgresql_default
+
+networks:
+  postgresql_default:
+    external: true
